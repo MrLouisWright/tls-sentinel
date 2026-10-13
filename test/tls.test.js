@@ -7,7 +7,7 @@ import { hasOpenssl, makePki } from './pki.js';
 
 const skip = !hasOpenssl() && 'openssl CLI not available';
 let pki; const servers = [];
-const serve = (opts) => new Promise((ok) => { const s = tls.createServer(opts, (c) => c.end()); s.on('tlsClientError', () => {}); s.listen(0, '127.0.0.1', () => ok(`localhost:${s.address().port}`)); servers.push(s); });
+const serve = (opts) => new Promise((ok) => { const s = tls.createServer(opts, (c) => c.end()); s.on('tlsClientError', () => {}); s.listen(0, 'localhost', () => ok(`localhost:${s.address().port}`)); servers.push(s); });
 const rules = (r) => new Set(r.findings.map((f) => f.rule));
 let good, legacy, weak, self;
 before(async () => {
