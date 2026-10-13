@@ -1,0 +1,51 @@
+name: 'tls-sentinel'
+description: 'Check TLS endpoints for certificate expiry, trust, weak protocols and ciphers'
+author: 'Louis Wright'
+branding: { icon: 'lock', color: 'green' }
+inputs:
+  targets: { description: 'host[:port] or https:// URLs (space-separated)', required: true }
+  warn-days: { description: 'Days before expiry to warn (default 30)', default: '' }
+  fail-on: { description: 'critical | high | medium | low | info | none', default: 'high' }
+  config: { description: 'Path to JSON config file', default: '' }
+  sarif: { description: 'Write SARIF to this path', default: '' }
+  json: { description: 'Write JSON report to this path', default: '' }
+  job-summary: { description: 'Write the Markdown report to the job summary (true/false)', default: 'true' }
+  args: { description: 'Extra CLI arguments', default: '' }
+outputs:
+  markdown-file: { description: 'Path of the Markdown report', value: '${{ steps.run.outputs.markdown-file }}' }
+  exit-code: { description: 'Exit code of the scan (0 pass, 1 findings, 2 error)', value: '${{ steps.run.outputs.exit-code }}' }
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with: { node-version: '20' }
+    - id: run
+      shell: bash
+      env:
+        TS_TARGETS: ${{ inputs.targets }}
+        TS_WARN_DAYS: ${{ inputs.warn-days }}
+        TS_FAIL_ON: ${{ inputs.fail-on }}
+        TS_CONFIG: ${{ inputs.config }}
+        TS_SARIF: ${{ inputs.sarif }}
+        TS_JSON: ${{ inputs.json }}
+        TS_JOB_SUMMARY: ${{ inputs.job-summary }}
+        TS_ARGS: ${{ inputs.args }}
+        TS_BIN: ${{ github.action_path }}/bin/tls-sentinel.js
+      run: |
+        md="$RUNNER_TEMP/tls-sentinel.md"
+        # shellcheck disable=SC2206
+        targets=($TS_TARGETS)
+        args=("${targets[@]}" --fail-on "$TS_FAIL_ON" --markdown "$md")
+        [ -n "$TS_WARN_DAYS" ] && args+=(--warn-days "$TS_WARN_DAYS")
+        [ -n "$TS_CONFIG" ] && args+=(--config "$TS_CONFIG")
+        [ -n "$TS_SARIF" ] && args+=(--sarif "$TS_SARIF")
+        [ -n "$TS_JSON" ] && args+=(--json "$TS_JSON")
+        set +e
+        # shellcheck disable=SC2086
+        node "$TS_BIN" "${args[@]}" $TS_ARGS
+        code=$?
+        set -e
+        echo "markdown-file=$md" >> "$GITHUB_OUTPUT"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        if [ "$TS_JOB_SUMMARY" = "true" ] && [ -f "$md" ]; then cat "$md" >> "$GITHUB_STEP_SUMMARY"; fi
+        exit $code

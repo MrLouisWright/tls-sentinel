@@ -1,0 +1,58 @@
+{
+  "name": "tls-sentinel",
+  "version": "0.0.0",
+  "description": "TLS endpoint checker: certificate expiry, hostname mismatch, untrusted or incomplete chains, self-signed certs, weak keys and signatures, TLS 1.0/1.1 and weak ciphers, missing TLS 1.3, long-lived certs. Uses Node's TLS stack, no OpenSSL binary needed. CLI, library and GitHub Action. Zero deps.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "tls-sentinel": "bin/tls-sentinel.js"
+  },
+  "files": [
+    "src",
+    "bin",
+    "action.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "tls",
+    "ssl",
+    "certificate",
+    "x509",
+    "expiry",
+    "https",
+    "cipher",
+    "tls1.3",
+    "ssl-checker",
+    "monitoring",
+    "security",
+    "sarif",
+    "cli",
+    "github-action"
+  ],
+  "author": "Louis Wright <hello@louiswright.co.uk> (https://github.com/MrLouisWright)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrLouisWright/tls-sentinel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MrLouisWright/tls-sentinel/issues"
+  },
+  "homepage": "https://github.com/MrLouisWright/tls-sentinel#readme"
+}
