@@ -1,6 +1,6 @@
 # tls-sentinel
 
-[![npm version](https://img.shields.io/npm/v/tls-sentinel.svg)](https://www.npmjs.com/package/tls-sentinel) [![CI](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml) [![Node](https://img.shields.io/node/v/tls-sentinel.svg)](https://nodejs.org) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/tls-sentinel.svg)](https://www.npmjs.com/package/tls-sentinel) [![CI](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml) [![Node](https://img.shields.io/node/v/tls-sentinel.svg)](https://nodejs.org) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![provenance](https://img.shields.io/badge/npm-provenance-blue)](https://docs.npmjs.com/generating-provenance-statements)
 
 > Check TLS endpoints for expiring or untrusted certificates, hostname mismatches, missing intermediates, weak keys and signatures, TLS 1.0/1.1, weak ciphers and missing TLS 1.3.
 
@@ -123,6 +123,31 @@ Free to use under MIT, no attribution required. If tls-sentinel helps you, a lin
 ```markdown
 [![Built with tls-sentinel by Louis Wright](https://img.shields.io/badge/built%20with-tls--sentinel-blue)](https://louiswright.co.uk)
 ```
+
+## Revocation, Certificate Transparency, STARTTLS and grades
+
+```bash
+npx tls-sentinel example.com --revocation           # query OCSP if the server does not staple
+npx tls-sentinel mail.example.com --starttls smtp   # port 587 unless you give one
+npx tls-sentinel db.internal:5432 --starttls postgres --ca internal-ca.pem
+npx tls-sentinel example.com --min-grade A-         # fail below an SSL Labs-style grade
+```
+
+- **OCSP**: a stapled response is always parsed. `--revocation` sends one OCSP request to the URL in the certificate's AIA extension. A revoked certificate is `cert-revoked` (critical). Must-Staple certificates without a stapled response, and certificates with no OCSP or CRL URL at all, are reported too. Only the certificate status is read; the responder's signature is not verified.
+- **Certificate Transparency**: a publicly trusted certificate without embedded SCTs is `no-sct`.
+- **STARTTLS**: SMTP (EHLO/STARTTLS), IMAP, POP3 (STLS), FTP (AUTH TLS) and PostgreSQL (SSLRequest), then the normal checks.
+- **Grade**: each target's summary has `grade` and `gradeReasons`. Trust problems give T (M for a name mismatch). RC4/NULL/EXPORT ciphers give F and 3DES gives C. TLS 1.0/1.1, no forward secrecy or a missing intermediate cap it at B, and no TLS 1.3 at A-. **A+ is never given**, because it needs HSTS, which [header-sentinel](https://www.npmjs.com/package/header-sentinel) checks. tls-sentinel only does TLS handshakes and certificates.
+
+## Module formats and types
+
+Ships ESM (`import`) and a bundled CommonJS build (`require`), with TypeScript declarations generated from the source:
+
+```js
+import * as lib from 'tls-sentinel';      // ESM
+const lib = require('tls-sentinel');      // CommonJS
+```
+
+Tests live in [`test/`](test) and run on Node 18, 20 and 22 in [GitHub Actions](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml), including a require+import check. Releases are published with `npm publish --provenance`.
 
 ## License
 

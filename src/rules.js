@@ -16,5 +16,12 @@ export const RULES = {
   'no-tls13': { severity: 'low', title: 'TLS 1.3 is not supported', group: 'protocol' },
   'long-validity': { severity: 'low', title: 'Certificate lifetime is longer than 398 days', group: 'certificate' },
   'no-ocsp-stapling': { severity: 'info', title: 'No OCSP response stapled', group: 'certificate' },
+  'cert-revoked': { severity: 'critical', title: 'Certificate is revoked (OCSP)', group: 'revocation' },
+  'must-staple-not-stapled': { severity: 'high', title: 'Certificate requires OCSP stapling (Must-Staple) but none was stapled', group: 'revocation' },
+  'ocsp-error': { severity: 'low', title: 'OCSP responder unreachable or returned an error/unknown status', group: 'revocation' },
+  'no-revocation-info': { severity: 'medium', title: 'Certificate has no OCSP URL or CRL distribution point', group: 'revocation' },
+  'no-sct': { severity: 'medium', title: 'No Certificate Transparency SCTs (embedded or stapled)', group: 'certificate' },
+  'grade-below-minimum': { severity: 'high', title: 'SSL Labs-style grade is below --min-grade', group: 'grade' },
+  'starttls-failed': { severity: 'high', title: 'STARTTLS negotiation failed', group: 'network' },
   'connect-error': { severity: 'high', title: 'Could not connect or complete a TLS handshake', group: 'network' },
 };

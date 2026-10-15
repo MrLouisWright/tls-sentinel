@@ -3,6 +3,12 @@ import { buildReport, exceeds, exitCode, formatText, formatJson, formatSarif, fo
 import { RULES } from './rules.js';
 import { handshake, certInfo, UNTRUSTED } from './tls.js';
 import tls from 'node:tls';
+import { parseCert, OID, aiaUrls, crlUrls, sctCount, mustStaple } from './der.js';
+import { buildOcspRequest, parseOcspResponse, queryOcsp } from './ocsp.js';
+import { negotiate, STARTTLS_PORTS } from './starttls.js';
+import { gradeTarget, GRADES, gradeRank } from './grade.js';
+
+export { parseCert, aiaUrls, crlUrls, sctCount, mustStaple, buildOcspRequest, parseOcspResponse, queryOcsp, negotiate, STARTTLS_PORTS, gradeTarget, GRADES };
 
 export { handshake, certInfo, RULES, exceeds, exitCode, formatText, formatJson, formatSarif, formatMarkdown, SEVERITIES, ConfigError };
 export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -20,10 +26,12 @@ const WEAK = { '3DES': 'DES-CBC3-SHA:ECDHE-RSA-DES-CBC3-SHA', RC4: 'RC4-SHA:RC4-
 
 async function checkOne(target, o) {
   let host, port; try { ({ host, port } = parseTarget(target)); if (!port || port > 65535) throw new Error('bad port'); } catch (e) { return { target, fatal: true, raw: [], errors: [`Invalid target ${target}: ${e.message}`] }; }
-  const name = `${host}:${port}`; const base = { host, port, servername: o.servername, timeout: o.timeout ?? 10000, ca: o.ca };
+  if (o.starttls && !/:\d+(\/|$)/.test(String(target)) && STARTTLS_PORTS[o.starttls]) port = STARTTLS_PORTS[o.starttls];
+  const name = `${host}:${port}`; const base = { host, port, servername: o.servername, timeout: o.timeout ?? 10000, ca: o.ca, starttls: o.starttls };
   const raw = []; const add = (rule, message, extra = {}) => raw.push({ rule, location: name, message, ...extra });
   let h = await handshake(base);
   if (!h.ok && /HANDSHAKE_FAILURE|NO_PROTOCOLS|UNSUPPORTED_PROTOCOL|VERSION|CIPHER/i.test(h.error)) { const legacyOnly = await handshake({ ...base, minVersion: 'TLSv1', ciphers: 'ALL:@SECLEVEL=0' }); if (legacyOnly.ok) h = legacyOnly; }
+  if (!h.ok && h.starttlsFailed) return { target: name, fatal: true, raw: [{ rule: 'starttls-failed', location: name, message: h.error }], errors: [`${name}: ${h.error}`] };
   if (!h.ok) return { target: name, fatal: true, raw: [{ rule: 'connect-error', location: name, message: `TLS handshake with ${name} failed: ${h.error}` }], errors: [`${name}: ${h.error}`] };
   const now = o.now ? new Date(o.now) : new Date();
   const leaf = h.chain[0]; const info = leaf ? certInfo(leaf) : null;
@@ -48,7 +56,28 @@ async function checkOne(target, o) {
     add(r, r === 'incomplete-chain' ? `Chain could not be built (${h.authorizationError}); the server probably omits intermediate certificates` : `Certificate is not trusted (${h.authorizationError})`, { evidence: h.authorizationError });
   }
   if (h.cipher && h.protocol === 'TLSv1.2' && /CBC|SHA$/i.test(h.cipher.standardName || h.cipher.name) && !/GCM|CHACHA|CCM/i.test(h.cipher.standardName || h.cipher.name)) add('cbc-cipher', `Negotiated ${h.cipher.standardName || h.cipher.name}`);
-  if (o.quick) { summary.ocspStapled = h.ocsp; return { target: name, summary, raw }; }
+  // revocation and Certificate Transparency
+  if (leaf) {
+    let pc = null; try { pc = parseCert(leaf.raw); } catch { pc = null; }
+    if (pc) {
+      const aia = aiaUrls(pc.extensions[OID.aia]); const crls = crlUrls(pc.extensions[OID.crlDp]);
+      const scts = sctCount(pc.extensions[OID.sct]);
+      Object.assign(summary, { ocspUrl: aia.ocsp[0], crl: crls[0], scts, ocspStapled: h.ocsp });
+      const publicCert = h.authorized && !o.ca && !(info?.selfIssued);
+      if (!aia.ocsp.length && !crls.length && !info?.selfIssued && !o.ca) add('no-revocation-info', 'Certificate has neither an OCSP URL (AIA) nor a CRL distribution point, so it cannot be revoked');
+      if (publicCert && !scts && !h.tlsSct) add('no-sct', 'Certificate has no embedded SCTs; Chrome and Safari require Certificate Transparency for public certificates', { fix: 'Reissue from a CA that embeds SCTs (all major public CAs do).' });
+      if (mustStaple(pc.extensions[OID.tlsFeature]) && !h.ocsp) add('must-staple-not-stapled', 'Certificate has the OCSP Must-Staple extension but the server did not staple a response; Firefox will refuse the connection');
+      let status = null;
+      if (h.ocspResponse) { try { status = { ...parseOcspResponse(h.ocspResponse), source: 'stapled' }; } catch { status = null; } }
+      if (!status && o.revocation && aia.ocsp.length && h.chain[1]) { try { status = { ...(await queryOcsp(aia.ocsp[0], leaf.raw, h.chain[1].raw, { timeout: o.timeout ?? 10000, fetchImpl: o.fetch })), source: aia.ocsp[0] }; } catch (e) { add('ocsp-error', `OCSP query to ${aia.ocsp[0]} failed: ${e.message}`); } }
+      if (status) {
+        summary.revocation = status.certStatus || status.responseStatus;
+        if (status.certStatus === 'revoked') add('cert-revoked', `OCSP (${status.source}) says the certificate was revoked${status.revokedAt ? ` at ${status.revokedAt}` : ''}`, { evidence: info?.serial });
+        else if (status.certStatus !== 'good') add('ocsp-error', `OCSP (${status.source}) returned ${status.certStatus || status.responseStatus}`);
+      }
+    }
+  }
+  if (o.quick) { summary.ocspStapled = h.ocsp; return finish({ target: name, summary, raw }, o); }
   if (!h.ocsp) add('no-ocsp-stapling', 'Server does not staple an OCSP response');
   // protocol probes
   const legacy = [];
@@ -61,12 +90,21 @@ async function checkOne(target, o) {
   if (weak.length) add('weak-cipher', `Accepts ${weak.join(', ')}`, { evidence: weak.join(',') });
   const rsa = await handshake({ ...base, maxVersion: 'TLSv1.2', ciphers: 'kRSA:@SECLEVEL=0' });
   if (rsa.ok) add('no-forward-secrecy', `Accepts static RSA key exchange (${rsa.cipher?.name})`, { evidence: rsa.cipher?.name });
-  return { target: name, summary, raw };
+  return finish({ target: name, summary, raw }, o);
+}
+
+/** Attach the SSL Labs-style grade (and the --min-grade finding). */
+function finish(r, o) {
+  const g = gradeTarget(r.raw, r.summary); r.summary.grade = g.grade; if (g.reasons.length) r.summary.gradeReasons = g.reasons;
+  if (o.minGrade && gradeRank(g.grade) > gradeRank(o.minGrade)) r.raw.push({ rule: 'grade-below-minimum', location: r.target, message: `Grade ${g.grade} is below the required ${o.minGrade} (${g.reasons.join('; ') || 'see findings'})`, evidence: g.grade });
+  return r;
 }
 
 /** Check TLS endpoints. Options: warnDays, criticalDays, timeout, servername, ca, quick (one handshake only), now, concurrency, allow, severity. */
 export async function check(targets, opts = {}) {
   validateConfig({ allow: opts.allow, severity: opts.severity });
+  if (opts.minGrade && !GRADES.includes(opts.minGrade)) throw new ConfigError(`min-grade must be one of ${GRADES.join(', ')}`);
+  if (opts.starttls && !STARTTLS_PORTS[opts.starttls]) throw new ConfigError(`starttls must be one of smtp, imap, pop3, ftp, postgres`);
   const out = new Array(targets.length); let i = 0;
   await Promise.all(Array.from({ length: Math.min(opts.concurrency || 4, targets.length) }, async () => { while (i < targets.length) { const k = i++; out[k] = await checkOne(targets[k], opts); } }));
   return buildReport(TOOL, out, opts);

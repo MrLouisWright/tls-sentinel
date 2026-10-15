@@ -1,24 +1,30 @@
 import tls from 'node:tls';
 import { X509Certificate } from 'node:crypto';
+import { negotiate } from './starttls.js';
 
 const UNTRUSTED = { DEPTH_ZERO_SELF_SIGNED_CERT: 'self-signed', SELF_SIGNED_CERT_IN_CHAIN: 'self-signed', UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'incomplete-chain', UNABLE_TO_GET_ISSUER_CERT_LOCALLY: 'incomplete-chain', UNABLE_TO_GET_ISSUER_CERT: 'untrusted-chain', CERT_UNTRUSTED: 'untrusted-chain', CERT_REVOKED: 'untrusted-chain' };
 export { UNTRUSTED };
 
 /** One TLS handshake. Never sends application data. Resolves { ok, protocol, cipher, authorized, authorizationError, chain, ocsp } or { ok:false, error }. */
-export function handshake({ host, port = 443, servername, timeout = 10000, ca, minVersion, maxVersion, ciphers }) {
+export async function handshake(o) {
+  if (!o.starttls) return tlsHandshake(o);
+  let socket; try { socket = await negotiate(o.starttls, o); } catch (e) { return { ok: false, error: `STARTTLS (${o.starttls}): ${e.code || e.message}`, code: e.code, starttlsFailed: true }; }
+  return tlsHandshake({ ...o, socket });
+}
+function tlsHandshake({ host, port = 443, servername, timeout = 10000, ca, minVersion, maxVersion, ciphers, socket, starttls }) {
   return new Promise((resolve) => {
     let done = false; let ocsp = null; let timer;
     const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { sock.destroy(); } catch {} resolve(r); };
     const sni = servername ?? (/^[\d.]+$|:/.test(host) ? undefined : host);
     let sock;
-    try { sock = tls.connect({ host, port, servername: sni, rejectUnauthorized: false, requestOCSP: true, ca, minVersion, maxVersion, ciphers, ALPNProtocols: ['http/1.1'] }); }
+    try { sock = tls.connect({ host, port, servername: sni, rejectUnauthorized: false, requestOCSP: true, ca, minVersion, maxVersion, ciphers, ...(socket ? { socket } : {}), ...(starttls ? {} : { ALPNProtocols: ['http/1.1'] }) }); }
     catch (e) { done = true; return resolve({ ok: false, error: e.code || e.message, code: e.code, unsupported: true }); }
     timer = setTimeout(() => finish({ ok: false, error: `timeout after ${timeout} ms` }), timeout);
     sock.on('OCSPResponse', (r) => { ocsp = r; });
     sock.once('secureConnect', () => {
       const chain = []; let c = sock.getPeerCertificate(true); const seen = new Set();
       while (c && c.raw && !seen.has(c.fingerprint256)) { seen.add(c.fingerprint256); chain.push(c); c = c.issuerCertificate; }
-      finish({ ok: true, protocol: sock.getProtocol(), cipher: sock.getCipher(), authorized: sock.authorized, authorizationError: sock.authorizationError ? String(sock.authorizationError.code || sock.authorizationError) : null, chain, ocsp: ocsp && ocsp.length ? true : false });
+      finish({ ok: true, protocol: sock.getProtocol(), cipher: sock.getCipher(), authorized: sock.authorized, authorizationError: sock.authorizationError ? String(sock.authorizationError.code || sock.authorizationError) : null, chain, ocsp: ocsp && ocsp.length ? true : false, ocspResponse: ocsp && ocsp.length ? ocsp : null });
     });
     sock.once('error', (e) => finish({ ok: false, error: e.code || e.message, code: e.code }));
   });
