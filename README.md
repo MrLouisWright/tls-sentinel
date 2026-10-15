@@ -1,5 +1,7 @@
 # tls-sentinel
 
+[![npm version](https://img.shields.io/npm/v/tls-sentinel.svg)](https://www.npmjs.com/package/tls-sentinel) [![CI](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/MrLouisWright/tls-sentinel/actions/workflows/ci.yml) [![Node](https://img.shields.io/node/v/tls-sentinel.svg)](https://nodejs.org) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > Check TLS endpoints for expiring or untrusted certificates, hostname mismatches, missing intermediates, weak keys and signatures, TLS 1.0/1.1, weak ciphers and missing TLS 1.3.
 
 `tls-sentinel` connects to each `host[:port]`, inspects the certificate chain the server sends, and probes which protocol versions and cipher families it accepts. It uses Node's own TLS stack, so there is no `openssl` binary or external service involved, and it only performs handshakes (no HTTP request is sent), so it works for any TLS service: HTTPS, SMTPS, IMAPS, LDAPS, databases. CLI, library and GitHub Action. Node.js 18+, **zero runtime dependencies**.
