@@ -59,6 +59,40 @@ console.log(report.targets[0].summary.daysLeft);
 process.exitCode = exitCode(report, 'high');
 ```
 
+## Options
+
+Full CLI reference (`tls-sentinel --help`):
+
+```text
+tls-sentinel 1.1.0 — check TLS endpoints: certificates, trust, protocols and ciphers
+
+Usage: tls-sentinel <host[:port]|https://url> [...] [options]
+
+Each target gets a normal handshake (certificate, chain, name, expiry) plus probes for TLS 1.0/1.1,
+TLS 1.3, weak ciphers and static RSA. Only handshakes are made; no application data is sent.
+
+      --warn-days <n>        Medium finding when the certificate expires within n days (default 30)
+      --critical-days <n>    High finding within n days (default 14)
+      --quick                One handshake only: skip protocol and cipher probes
+      --servername <name>    SNI / expected name (default: the target host)
+      --ca <file>            Extra trusted CA bundle (PEM), e.g. for internal PKI
+      --timeout <ms>         Per-handshake timeout (default 10000)
+      --concurrency <n>      Targets checked in parallel (default 4)
+      --starttls <proto>     Negotiate STARTTLS first: smtp (587), imap (143), pop3 (110), ftp (21), postgres (5432)
+      --revocation           Ask the certificate's OCSP responder when no response is stapled (one HTTP POST)
+      --min-grade <g>        Fail when the SSL Labs-style grade is below g (A, A-, B, C, M, T, F)
+Policy and output
+  -c, --config <file>        JSON config (default .tls-sentinel.json if present)
+  -f, --format <fmt>         text (default) | json | sarif | markdown
+      --json/--sarif/--markdown <file>  Also write that format to a file
+      --fail-on <sev>        critical | high | medium | low | info | none (default high)
+      --list-rules           Print rules and default severities
+      --no-color             Disable colours
+  -v, --version / -h, --help
+
+Exit codes: 0 = passed, 1 = findings at or above --fail-on, 2 = usage error or a target could not be checked.
+```
+
 ## Configuration
 
 Put a `.tls-sentinel.json` in the working directory (or pass `--config <file>`). Every key is optional; CLI flags override the file.
